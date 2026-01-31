@@ -1,15 +1,3 @@
-#!/usr/bin/env python3
-"""
-Command-line interface for YouTube Video Summariser.
-
-Usage:
-    youtube-summariser <youtube_url> [--output filename.txt]
-
-Examples:
-    youtube-summariser "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
-    youtube-summariser "https://youtu.be/dQw4w9WgXcQ" -o my_summary.txt
-"""
-
 import argparse
 import sys
 import time
@@ -119,18 +107,10 @@ def combine_transcripts(master_data):
 
 
 def load_prompt(filename: str) -> str:
-    # 1. Get the path of the current script (src/script.py)
     current_script = Path(__file__).resolve()
-    
-    # 2. Get the project root (up one level from src/)
     project_root = current_script.parent.parent.parent
-    
-    # 3. Construct the path to the prompt file
     prompt_path = project_root / "prompts" / filename
-    
-    # 4. Read and return the content
     return prompt_path.read_text(encoding="utf-8")
-
 
 
 def main():
@@ -156,7 +136,7 @@ def main():
     llm_context = combine_transcripts(transcripts)
     llm = LLMClient(provider="google")
     final_report = llm.chat(system_prompt=system_prompt, user_message=llm_context) 
-    with open(f"{start_date_str}_report.txt", "w", encoding="utf-8") as f:
+    with open(f"reports/{start_date_str}_report.txt", "w", encoding="utf-8") as f:
         f.write(final_report)
 
 
