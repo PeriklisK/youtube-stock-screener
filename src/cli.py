@@ -9,8 +9,8 @@ from dotenv import load_dotenv
 
 # from . import __version__
 from .llm_client import LLMClient
-from .youtube_helper import YouTubeHelper
-from .youtube_helper import YouTubeClient
+from .youtube_helper import YouTubeHelper, YouTubeClient
+from .text_to_speech import text_to_voice 
 
 load_dotenv()
 
@@ -135,10 +135,12 @@ def main():
     transcripts = get_transcripts_from_video_ids(video_ids)
     llm_context = combine_transcripts(transcripts)
     llm = LLMClient(provider="google")
+    print("Generating Summary from transcripts ...")
     final_report = llm.chat(system_prompt=system_prompt, user_message=llm_context) 
     with open(f"reports/{start_date_str}_report.txt", "w", encoding="utf-8") as f:
         f.write(final_report)
-
+    print("Generating Voiceover ...")
+    text_to_voice(final_report, f"reports/{start_date_str}_audio.mp3")
 
 if __name__ == "__main__":
     main()

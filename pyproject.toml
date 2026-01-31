@@ -49,6 +49,8 @@ dependencies = [
     "jupyter>=1.1.1",
     "jupyterlab>=4.5.3",
     "google-api-python-client>=2.188.0",
+    "google-cloud-texttospeech>=2.34.0",
+    "edge-tts>=7.2.7",
 ]
 
 [project.optional-dependencies]
