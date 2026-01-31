@@ -1,11 +1,14 @@
 """YouTube helper utilities for extracting video IDs and transcripts."""
 
+from ipaddress import collapse_addresses
 import logging
 import re
+import os
 from typing import Dict, List, Optional
 from urllib.parse import parse_qs, urlparse
 
 from youtube_transcript_api import YouTubeTranscriptApi
+from googleapiclient.discovery import build
 
 logger = logging.getLogger(__name__)
 
@@ -78,11 +81,16 @@ class YouTubeHelper:
             transcript_list = ytt_api.fetch(video_id).to_raw_data()
 
             # Format transcript with timestamps
+            extract_timestamp = False
             formatted_parts = []
             for entry in transcript_list:
                 timestamp = YouTubeHelper.format_timestamp(entry["start"])
                 text = entry["text"]
-                formatted_parts.append(f"[{timestamp}] {text}")
+                if extract_timestamp:
+                    formatted_parts.append(f"[{timestamp}] {text}")
+                else:
+                    formatted_parts.append(f"{text}")
+
 
             transcript_text = "\n".join(formatted_parts)
 
@@ -136,3 +144,49 @@ class YouTubeHelper:
         except Exception as e:
             logger.error(f"Error getting available transcripts for video {video_id}: {str(e)}")
             raise Exception("Failed to get available transcripts")
+
+
+
+
+class YouTubeClient:
+
+    def __init__(self):
+        api_key = os.environ.get("YOUTUBE_API_KEY")
+        self.youtube = build('youtube', 'v3', developerKey=api_key)
+        
+    def get_video_ids_from_channels(self, channels, start_date, end_date):
+        collected_videos = []
+
+        for name, cid in channels.items():
+            print(f"Scanning {name} via Playlist...")
+            try:
+                request = self.youtube.playlistItems().list(
+                    part="snippet",
+                    playlistId=cid,
+                    maxResults=10  # 10 results for only 1 unit!
+                )
+                response = request.execute()
+                
+                # items is a list of dictionaries
+                items = response.get('items', [])
+
+                for item in items:
+                    # Check for standard dict access
+                    snippet = item['snippet']
+                    v_title = snippet['title']
+                    published_at = snippet['publishedAt']
+                    v_id = snippet['resourceId']['videoId']
+                    
+                    # Date Filter (Match your specific range)
+                    if start_date <= published_at <= end_date:
+                        collected_videos.append({
+                            "v_id": v_id,
+                            "title": v_title,
+                            "channel": name
+                        })
+                        print(f"  ✅ Found: {v_title}")
+
+            except Exception as e:
+                print(f"❌ Failed {name}: {e}")
+
+        return collected_videos

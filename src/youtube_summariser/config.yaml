@@ -11,3 +11,6 @@ anthropic:
   model: "claude-sonnet-4-5-20250929"
   max_tokens: 3000
 
+google:
+  model: "gemini-3-flash-preview"
+  max_tokens: 8000

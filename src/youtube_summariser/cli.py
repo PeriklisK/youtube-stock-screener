@@ -12,34 +12,32 @@ Examples:
 
 import argparse
 import sys
-from datetime import datetime
+import time
+import random
+from datetime import datetime, timedelta
+from pathlib import Path
 
 from dotenv import load_dotenv
 
-from . import __version__
+# from . import __version__
 from .llm_client import LLMClient
 from .youtube_helper import YouTubeHelper
+from .youtube_helper import YouTubeClient
 
 load_dotenv()
 
-SYSTEM_PROMPT = """Summarize this video transcript concisely.
+SYSTEM_PROMPT = """Analyze the following YouTube transcript for stock or market recommendations. 
 
-## Output Format (use markdown):
+For every ticker or company mentioned as a "buy," "watch," or "recommendation," extract the information in the following format:
 
-### TL;DR
-One paragraph capturing the essence (2-3 sentences).
+- **[TICKER/STOCK NAME]**: [A concise 1-2 sentence explanation of the specific technical or fundamental reasons given by the speaker for this recommendation.]
 
-### Key Takeaways
-- Bullet points of the most important insights
-- Include timestamps like [MM:SS] where relevant
+Guidelines:
+1. If no specific stocks are recommended, return: "No specific stock recommendations found."
+2. Focus on "why" (e.g., "breaking out of a wedge," "strong earnings beat," "moving average cross").
+3. Ignore stocks mentioned in passing that aren't being actively recommended.
 
-### Detailed Summary
-Comprehensive breakdown. Scale length to video complexity (~50 words per 5 minutes of content).
-
-### Notable Quotes
-1-3 memorable quotes with timestamps, if any stand out.
-
-Preserve any timestamps from the transcript. Be concise—omit filler and tangents."""
+TRANSCRIPT:"""
 
 
 def summarize_transcript(transcript: str, llm: LLMClient, stream: bool = True) -> str:
@@ -78,114 +76,88 @@ def generate_output_filename(video_id: str) -> str:
     return f"summary_{video_id}_{timestamp}.txt"
 
 
+def get_transcripts_from_video_ids(collected_videos):
+    master_data = []
+
+    print(f"\nFound {len(collected_videos)} videos. Fetching transcripts...")
+
+    for video in collected_videos:
+        try:
+            raw = YouTubeHelper.get_transcript(video['v_id'])
+            if isinstance(raw, str):
+                # If your helper already joins the text into a string, use it directly
+                full_text = raw 
+            else:
+                # If it's the raw list of dicts, join it here
+                full_text = "\n".join([t['text'] for t in raw])
+                
+            master_data.append({
+                "channel": video['channel'],
+                "title": video['title'],
+                "transcript": full_text
+            })
+            print(f"✅ Success: {video['title']}")
+            wait_time = random.uniform(5, 12)
+            print(f"Sleeping for {wait_time:.2f}s to avoid IP block...")
+            time.sleep(wait_time)
+        except Exception as e:
+            print(f"❌ Failed transcript for {video['title']}")
+            print(e)
+            raise
+    return master_data
+
+
+def combine_transcripts(master_data):
+    context_for_gemini = ""
+    for entry in master_data:
+        context_for_gemini += f"\nSOURCE CHANNEL: {entry['channel']}\n"
+        context_for_gemini += f"VIDEO TITLE: {entry['title']}\n"
+        context_for_gemini += f"TRANSCRIPT CONTENT: {entry['transcript']}\n"
+        context_for_gemini += "--- END OF TRANSCRIPT ---"
+        context_for_gemini += "="*10 + "\n"    
+        return context_for_gemini
+
+
+def load_prompt(filename: str) -> str:
+    # 1. Get the path of the current script (src/script.py)
+    current_script = Path(__file__).resolve()
+    
+    # 2. Get the project root (up one level from src/)
+    project_root = current_script.parent.parent.parent
+    
+    # 3. Construct the path to the prompt file
+    prompt_path = project_root / "prompts" / filename
+    
+    # 4. Read and return the content
+    return prompt_path.read_text(encoding="utf-8")
+
+
+
 def main():
-    parser = argparse.ArgumentParser(
-        prog="youtube-summariser",
-        description="Summarize YouTube videos from the command line",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  youtube-summariser "https://www.youtube.com/watch?v=VIDEO_ID"
-  youtube-summariser "https://youtu.be/VIDEO_ID" --output summary.txt
-  youtube-summariser "https://youtube.com/watch?v=VIDEO_ID" -o my_notes.txt
-        """,
-    )
-    parser.add_argument("url", nargs="?", help="YouTube video URL to summarize")
-    parser.add_argument(
-        "-o",
-        "--output",
-        help="Output filename (default: summary_<video_id>_<timestamp>.txt)",
-        default=None,
-    )
-    parser.add_argument(
-        "--no-save", action="store_true", help="Print summary to stdout without saving to file"
-    )
-    parser.add_argument(
-        "--provider",
-        choices=["openai", "anthropic"],
-        help="LLM provider to use (overrides config.yaml)",
-        default=None,
-    )
-    parser.add_argument(
-        "--no-stream",
-        action="store_true",
-        help="Disable streaming output (wait for complete response before displaying)",
-    )
-    parser.add_argument("-v", "--version", action="version", version=f"%(prog)s {__version__}")
+    channels = {
+        "BWB - Business With Brian": "UULFyqlbzLoYtpqDXwRI9Yh5LA",
+        "Chris Sain": "UULFrTFPf6rq5OUSWb7ILW9trg",
+        "Asymmetric Investing by Travis Hoium": "UULFM2udYo4m-_uQfbfLGwf6mA",
+        "Felix & Friends (Goat Academy)": "UULFJtfma0mE_XrBAD9uakcjfA",
+        "Amit Kukreja": "UULFjZnbgPb08NFg7MHyPQRZ3Q",
+    }
 
-    args = parser.parse_args()
+    end_date = datetime.now()
+    start_date = end_date - timedelta(days=1)
+    start_date_str = start_date.strftime('%Y-%m-%d')
+    end_date_str = end_date.strftime('%Y-%m-%d')
 
-    # Check if URL was provided
-    if not args.url:
-        parser.print_help()
-        sys.exit(0)
+    system_prompt = load_prompt("combined_transcript_summary.md")
 
-    # Initialize LLM client
-    try:
-        llm = LLMClient(provider=args.provider)
-        print(f"Using {llm.provider}/{llm.get_model()}")
-    except ValueError as e:
-        print(f"Error: {str(e)}", file=sys.stderr)
-        sys.exit(1)
-
-    # Validate URL
-
-    if not YouTubeHelper.validate_url(args.url):
-        print("Error: Invalid YouTube URL", file=sys.stderr)
-        sys.exit(1)
-
-    # Extract video ID
-    video_id = YouTubeHelper.extract_video_id(args.url)
-    if not video_id:
-        print("Error: Could not extract video ID from URL", file=sys.stderr)
-        sys.exit(1)
-
-    print(f"Fetching transcript for {video_id}...")
-    try:
-        transcript = YouTubeHelper.get_transcript(video_id)
-    except Exception as e:
-        print(f"Error: {str(e)}", file=sys.stderr)
-        sys.exit(1)
-
-    print(f"Transcript: {len(transcript)} characters")
-    print("Generating summary...")
-    try:
-        summary = summarize_transcript(transcript, llm, stream=not args.no_stream)
-    except Exception as e:
-        print(f"\nError generating summary: {str(e)}", file=sys.stderr)
-        sys.exit(1)
-
-    if args.no_stream:
-        print("Done.")
-
-    # Prepare output content for file saving
-    output_content = f"""YouTube Video Summary
-=====================
-Video URL: {args.url}
-Video ID: {video_id}
-Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
-Model: {llm.provider} / {llm.get_model()}
-
-{summary}
-"""
-
-    # Output handling
-    if args.no_save:
-        if args.no_stream:
-            # Only print full formatted output if we haven't already streamed it
-            print("\n" + "=" * 50)
-            print(output_content)
-    else:
-        output_file = args.output or generate_output_filename(video_id)
-
-        with open(output_file, "w", encoding="utf-8") as f:
-            f.write(output_content)
-
-        print(f"Saved to {output_file}")
-        if args.no_stream:
-            # Only print full formatted output if we haven't already streamed it
-            print("\n" + "=" * 50)
-            print(output_content)
+    yt_client = YouTubeClient()
+    video_ids = yt_client.get_video_ids_from_channels(channels, start_date_str, end_date_str)
+    print(video_ids)
+    transcripts = get_transcripts_from_video_ids(video_ids)
+    llm_context = combine_transcripts(transcripts)
+    llm = LLMClient(provider="google")
+    final_report = llm.chat(system_prompt=system_prompt, user_message=llm_context) 
+    with open(f"{start_date_str}_report.txt", "w", encoding="utf-8") as f:
+        f.write(final_report)
 
 
 if __name__ == "__main__":

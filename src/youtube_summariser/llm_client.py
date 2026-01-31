@@ -22,7 +22,7 @@ def load_config() -> dict:
             "provider": "google",
             "openai": {"model": "gpt-5.2", "max_tokens": 3000},
             "anthropic": {"model": "claude-sonnet-4-5-20250929", "max_tokens": 3000},
-            "google": {"model": "gemini-3-flash-preview", "max_tokens": 3000},
+            "google": {"model": "gemini-3-flash-preview", "max_tokens": 8000},
         }
     except yaml.YAMLError as e:
         raise ValueError(f"Invalid YAML in configuration file: {e}")
@@ -85,13 +85,14 @@ class LLMClient:
             "openai": "gpt-5.2",
             "anthropic": "claude-sonnet-4-5-20250929",
             "google": "gemini-3-flash-preview"
+            # "google": "gemini-3-pro-preview"
         }
         return provider_config.get("model", defaults.get(self.provider))
 
     def get_max_tokens(self) -> int:
         """Get max tokens for the current provider."""
         provider_config = self.config.get(self.provider, {})
-        return provider_config.get("max_tokens", 3000)
+        return provider_config.get("max_tokens", 8000)
 
     def chat(self, system_prompt: str, user_message: str) -> str:
         """
