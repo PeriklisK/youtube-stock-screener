@@ -108,7 +108,7 @@ def combine_transcripts(master_data):
 
 def load_prompt(filename: str) -> str:
     current_script = Path(__file__).resolve()
-    project_root = current_script.parent.parent.parent
+    project_root = current_script.parent.parent
     prompt_path = project_root / "prompts" / filename
     return prompt_path.read_text(encoding="utf-8")
 
