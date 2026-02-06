@@ -1,10 +1,10 @@
 import asyncio
 import edge_tts
-
+from .utils import PROJECT_ROOT
 
 async def _generate_voice_async(text, filename):
     communicate = edge_tts.Communicate(text, "en-US-AvaNeural")
-    await communicate.save(filename)
+    await communicate.save(PROJECT_ROOT/ "reports" / filename)
 
 
 def text_to_voice(text, filename="output.mp3"):
