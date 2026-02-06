@@ -103,7 +103,7 @@ def combine_transcripts(master_data):
         context_for_gemini += f"TRANSCRIPT CONTENT: {entry['transcript']}\n"
         context_for_gemini += "--- END OF TRANSCRIPT ---"
         context_for_gemini += "="*10 + "\n"    
-        return context_for_gemini
+    return context_for_gemini
 
 
 def load_prompt(filename: str) -> str:
@@ -134,13 +134,15 @@ def main():
     print(video_ids)
     transcripts = get_transcripts_from_video_ids(video_ids)
     llm_context = combine_transcripts(transcripts)
+    with open(f"reports/{start_date_str}_transcripts.txt", "w", encoding="utf-8") as f:
+        f.write(llm_context)
     llm = LLMClient(provider="google")
     print("Generating Summary from transcripts ...")
     final_report = llm.chat(system_prompt=system_prompt, user_message=llm_context) 
     with open(f"reports/{start_date_str}_report.txt", "w", encoding="utf-8") as f:
         f.write(final_report)
     print("Generating Voiceover ...")
-    text_to_voice(final_report, f"reports/{start_date_str}_audio.mp3")
+    # text_to_voice(final_report, f"{start_date_str}_audio.mp3")
 
 if __name__ == "__main__":
     main()

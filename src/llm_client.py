@@ -3,7 +3,8 @@
 import logging
 import os
 from importlib import resources
-from typing import Iterator, Optional
+from typing import Iterator, Optional, List, Literal, Type, Union, Any
+from pydantic import BaseModel
 
 import yaml
 
@@ -94,7 +95,8 @@ class LLMClient:
         provider_config = self.config.get(self.provider, {})
         return provider_config.get("max_tokens", 8000)
 
-    def chat(self, system_prompt: str, user_message: str) -> str:
+    def chat(self, system_prompt: str, user_message: str, 
+             response_schema: Optional[Type[BaseModel]] = None) -> Union[str, Any]:
         """
         Send a chat request to the LLM.
 
@@ -110,7 +112,7 @@ class LLMClient:
         elif self.provider == "anthropic":
             return self._chat_anthropic(system_prompt, user_message)
         elif self.provider == "google":
-            return self._chat_google(system_prompt, user_message)
+            return self._chat_google(system_prompt, user_message, response_schema)
         else:
             raise ValueError(f"Unsupported provider: {self.provider}")
 
@@ -156,16 +158,28 @@ class LLMClient:
         )
         return response.content[0].text
 
-    def _chat_google(self, system_prompt: str, user_message: str) -> str:
+    def _chat_google(self,
+                     system_prompt: str, 
+                     user_message: str, 
+                     response_schema: Optional[Type[BaseModel]] = None  # New optional arg
+                     ) -> Union[str, Any]:
         from google.genai import types
+        config_args = {
+            "system_instruction": system_prompt,
+            "max_output_tokens": self.get_max_tokens(),
+        }
+        # If a schema is provided, upgrade the config to JSON mode
+        if response_schema:
+            config_args["response_mime_type"] = "application/json"
+            config_args["response_schema"] = response_schema
+            
         response = self._client.models.generate_content(
             model=self.get_model(),
             contents=user_message,
-            config=types.GenerateContentConfig(
-                system_instruction=system_prompt,
-                max_output_tokens=self.get_max_tokens(),
-            ),
+            config=types.GenerateContentConfig(**config_args),
         )
+        if response_schema:
+            return response.parsed
         return response.text
 
 
