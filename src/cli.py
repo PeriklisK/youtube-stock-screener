@@ -11,6 +11,8 @@ from dotenv import load_dotenv
 from .llm_client import LLMClient
 from .youtube_helper import YouTubeHelper, YouTubeClient
 from .text_to_speech import text_to_voice 
+from .schemas import MarketReport
+from .io_manager import load_prompt, save_json
 
 load_dotenv()
 
@@ -69,8 +71,13 @@ def get_transcripts_from_video_ids(collected_videos):
 
     print(f"\nFound {len(collected_videos)} videos. Fetching transcripts...")
 
-    for video in collected_videos:
+    for i, video in enumerate(collected_videos):
         try:
+            if i!=0:
+                wait_time = random.uniform(5, 12)
+                print(f"Sleeping for {wait_time:.2f}s to avoid IP block...")
+                time.sleep(wait_time)
+
             raw = YouTubeHelper.get_transcript(video['v_id'])
             if isinstance(raw, str):
                 # If your helper already joins the text into a string, use it directly
@@ -85,9 +92,6 @@ def get_transcripts_from_video_ids(collected_videos):
                 "transcript": full_text
             })
             print(f"✅ Success: {video['title']}")
-            wait_time = random.uniform(5, 12)
-            print(f"Sleeping for {wait_time:.2f}s to avoid IP block...")
-            time.sleep(wait_time)
         except Exception as e:
             print(f"❌ Failed transcript for {video['title']}")
             print(e)
@@ -106,11 +110,56 @@ def combine_transcripts(master_data):
     return context_for_gemini
 
 
-def load_prompt(filename: str) -> str:
-    current_script = Path(__file__).resolve()
-    project_root = current_script.parent.parent
-    prompt_path = project_root / "prompts" / filename
-    return prompt_path.read_text(encoding="utf-8")
+# def load_prompt(filename: str) -> str:
+#     current_script = Path(__file__).resolve()
+#     project_root = current_script.parent.parent
+#     prompt_path = project_root / "prompts" / filename
+#     return prompt_path.read_text(encoding="utf-8")
+
+
+def generate_daily_report(channels, start_date_str, end_date_str):
+    system_prompt = load_prompt("combined_transcript_summary.md")
+
+    yt_client = YouTubeClient()
+    video_ids = yt_client.get_video_ids_from_channels(channels, start_date_str, end_date_str)
+    print(video_ids)
+    transcripts = get_transcripts_from_video_ids(video_ids)
+    llm_context = combine_transcripts(transcripts)
+    llm = LLMClient(provider="google")
+    print("Generating Summary from transcripts ...")
+    final_report = llm.chat(system_prompt=system_prompt, user_message=llm_context)     
+    with open(f"reports/{start_date_str}_report.txt", "w", encoding="utf-8") as f:
+        f.write(final_report)
+
+
+def generate_daily_json(channels, start_date_str, end_date_str):
+    system_prompt = load_prompt("combined_transcript_summary.md")
+    transcript_generation_prompt = load_prompt("generate_transcript_for_daily_report.md")
+
+    yt_client = YouTubeClient()
+    video_ids = yt_client.get_video_ids_from_channels(channels, start_date_str, end_date_str)
+    print(video_ids)
+    transcripts = get_transcripts_from_video_ids(video_ids)
+    llm_context = combine_transcripts(transcripts)
+    llm = LLMClient(provider="google")
+    print("Generating Summary from transcripts ...")
+    json_report = llm.chat(system_prompt=system_prompt, user_message=llm_context, response_schema=MarketReport)     
+    # with open(f"reports/{start_date_str}_report.txt", "w", encoding="utf-8") as f:
+    #     f.write(final_report)
+
+    formatted_transcript_generation_prompt = transcript_generation_prompt.format(
+        report_title=json_report.report_title,
+          full_json_dump=json_report.model_dump_json(indent=2)
+    )
+    ft = llm.chat(
+            system_prompt="You are a financial scriptwriter.",
+            user_message=formatted_transcript_generation_prompt
+        )
+    
+    json_report.audio_path = str(text_to_voice(ft, f"{start_date_str}_audio.mp3"))
+    save_json(json_report, f"{start_date_str}_report.json")
+
+
 
 
 def main():
@@ -125,24 +174,12 @@ def main():
     end_date = datetime.now()
     start_date = end_date - timedelta(days=1)
     start_date_str = start_date.strftime('%Y-%m-%d')
-    end_date_str = end_date.strftime('%Y-%m-%d')
+    end_date_str = end_date.strftime('%Y-%m-%d')    
 
-    system_prompt = load_prompt("combined_transcript_summary.md")
+    # generate_daily_report(channels, start_date_str, end_date_str)
+    generate_daily_json(channels, start_date_str, end_date_str)
+    
 
-    yt_client = YouTubeClient()
-    video_ids = yt_client.get_video_ids_from_channels(channels, start_date_str, end_date_str)
-    print(video_ids)
-    transcripts = get_transcripts_from_video_ids(video_ids)
-    llm_context = combine_transcripts(transcripts)
-    with open(f"reports/{start_date_str}_transcripts.txt", "w", encoding="utf-8") as f:
-        f.write(llm_context)
-    llm = LLMClient(provider="google")
-    print("Generating Summary from transcripts ...")
-    final_report = llm.chat(system_prompt=system_prompt, user_message=llm_context) 
-    with open(f"reports/{start_date_str}_report.txt", "w", encoding="utf-8") as f:
-        f.write(final_report)
-    print("Generating Voiceover ...")
-    # text_to_voice(final_report, f"{start_date_str}_audio.mp3")
 
 if __name__ == "__main__":
     main()

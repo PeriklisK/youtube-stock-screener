@@ -21,5 +21,6 @@ For every ticker, use this exact structure:
 - Only include stocks where a specific reason or thesis was given. Ignore casual mentions.
 - Do not hallucinate metrics. If a speaker didn't give a number, don't invent one.
 - Maintain a professional, objective tone.
+- Leave the voiceover_script field empty (null). Do not populate it
 
 ### TRANSCRIPTS TO ANALYZE:

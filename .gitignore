@@ -77,3 +77,4 @@ var/
 .env
 *.txt
 *.mp3
+*.json
